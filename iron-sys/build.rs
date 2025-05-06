@@ -11,6 +11,7 @@ fn main() {
     let flags = &[
         "-std=gnu2x",
         "-Wno-deprecated-declarations",
+        "-Wno-incompatible-pointer-types-discards-qualifiers",
         "-Wno-initializer-overrides",
         "-Wno-unused",
         "-Wno-unused-parameter",
