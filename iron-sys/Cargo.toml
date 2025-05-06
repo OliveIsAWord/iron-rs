@@ -1,0 +1,10 @@
+[package]
+name = "iron-sys"
+version = "0.1.0"
+edition = "2024"
+links = "iron"
+
+[build-dependencies]
+bindgen = "0.71"
+cc = "1"
+walkdir = "2.5"

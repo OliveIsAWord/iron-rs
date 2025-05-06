@@ -1,0 +1,3 @@
+[submodule "iron-sys/vendor"]
+	path = iron-sys/vendor
+	url = https://github.com/spsandwichman/coyote.git
