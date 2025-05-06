@@ -31,7 +31,7 @@ mod tests {
                 print_func(&raw mut db, f);
                 emit_asm(&raw mut db, f);
                 let bytes = std::slice::from_raw_parts(db.at, db.len);
-                let string = str::from_utf8_unchecked(bytes);
+                let string = std::str::from_utf8_unchecked(bytes);
                 print!("{string}");
             }
             panic!()
