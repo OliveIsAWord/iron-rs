@@ -1,6 +1,6 @@
 use std::{env, path::PathBuf};
 
-use bindgen::callbacks::ParseCallbacks;
+use bindgen::{AliasVariation, callbacks::ParseCallbacks};
 use walkdir::WalkDir;
 
 fn main() {
@@ -55,9 +55,11 @@ fn main() {
         .default_enum_style(bindgen::EnumVariation::Rust {
             non_exhaustive: true,
         })
+        // These enums are exhaustive.
         .rustified_enum("Fe(SymbolBinding|SymbolKind|RegStatus)")
         .bitfield_enum("FeTrait")
         .prepend_enum_name(false)
+        .default_alias_style(AliasVariation::NewType)
         .wrap_unsafe_ops(true)
         .flexarray_dst(true)
         .generate()
