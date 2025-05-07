@@ -10,5 +10,23 @@ fn its_alive() {
         [FuncParam { ty: Ty::I32 }],
         [FuncParam { ty: Ty::I32 }],
     );
-    todo!()
+    let meower = module.create_symbol("", SymbolBinding::Global);
+    let func = module.create_func(func_symbol, func_sig);
+    //todo!()
+}
+
+#[test]
+fn interior_mutability_test() {
+    let ptr = Box::into_raw(Box::new(42i32));
+    let new_box = unsafe {
+        foo(&NonNull::new_unchecked(ptr));
+        Box::from_raw(ptr)
+    };
+    assert_eq!(*new_box, 43);
+}
+
+unsafe fn foo(ptr: &NonNull<i32>) {
+    unsafe {
+        *ptr.as_ptr() += 1;
+    }
 }

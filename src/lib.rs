@@ -3,7 +3,7 @@
 #[cfg(test)]
 mod tests;
 
-use std::{mem::MaybeUninit, ptr::NonNull};
+use std::{marker::PhantomData, mem::MaybeUninit, ptr::NonNull};
 
 use iron_sys as ffi;
 
@@ -14,7 +14,7 @@ use ffi::{InstKind, InstKindGeneric, RegStatus, Regclass, SymbolKind, Trait, VRe
 pub use ffi::{Arch, CallConv, SymbolBinding, System, Ty};
 
 #[must_use]
-unsafe fn nonnull<T>(ptr: *mut T) -> NonNull<T> {
+const unsafe fn nonnull<T>(ptr: *mut T) -> NonNull<T> {
     #[cfg(debug_assertions)]
     {
         NonNull::new(ptr).unwrap()
@@ -46,8 +46,12 @@ fn vrbuf_new(cap: usize) -> ffi::VRegBuffer {
 
 pub struct Module {
     inner: NonNull<ffi::Module>,
+    // TODO: some methods like `create_func` would like to take a shared reference to `self`,
+    // in which case these would need to be wrapped with some interior mutability type.
     ipool: ffi::InstPool,
     vregs: ffi::VRegBuffer,
+    // We own the memory for `Symbol` and `FuncSig` for each function
+    _func_data: Vec<(Symbol, FuncSig)>,
 }
 
 impl Module {
@@ -61,8 +65,10 @@ impl Module {
             inner,
             ipool: ipool_new(),
             vregs: vrbuf_new(64),
+            _func_data: vec![],
         }
     }
+
     #[must_use]
     pub fn create_symbol(&mut self, name: impl Into<String>, binding: SymbolBinding) -> Symbol {
         let name = name.into();
@@ -70,27 +76,49 @@ impl Module {
         let Ok(len) = u16::try_from(len) else {
             panic!("attempted to create a symbol with a name more than u16::MAX bytes: {name:?}");
         };
+        let ptr = if len == 0 {
+            std::ptr::null()
+        } else {
+            name.as_ptr().cast()
+        };
+        let inner = unsafe { nonnull(ffi::symbol_new(self.inner.as_ptr(), ptr, len, binding)) };
+        Symbol { inner, _name: name }
+    }
+
+    #[must_use]
+    pub fn create_func<'a>(&'a mut self, symbol: Symbol, sig: FuncSig) -> Func<'a> {
+        unsafe {
+            (*self.inner.as_ptr()).funcs.first = std::ptr::null_mut();
+        }
+        //panic!("wtf");
         let inner = unsafe {
-            nonnull(ffi::symbol_new(
-                self.inner.as_mut(),
-                name.as_ptr().cast(),
-                len,
-                binding,
+            nonnull(ffi::func_new(
+                self.inner.as_ptr(),
+                symbol.inner.as_ptr(),
+                sig.0.as_ptr(),
+                // NOTE: `FeFunc` holds a pointer to these two for its entire lifetime
+                &raw mut self.ipool,
+                &raw mut self.vregs,
             ))
         };
-        Symbol { inner, _name: name }
+        self._func_data.push((symbol, sig));
+        Func {
+            inner,
+            phantom: PhantomData,
+        }
     }
 }
 
 impl Drop for Module {
     fn drop(&mut self) {
         let &mut Self {
-            mut inner,
+            inner,
             mut ipool,
             mut vregs,
+            _func_data: _,
         } = self;
         unsafe {
-            ffi::module_destroy(inner.as_mut());
+            ffi::module_destroy(inner.as_ptr());
             ffi::ipool_destroy(&raw mut ipool);
             ffi::vrbuf_destroy(&raw mut vregs);
         }
@@ -105,7 +133,7 @@ pub struct Symbol {
 impl Drop for Symbol {
     fn drop(&mut self) {
         unsafe {
-            ffi::symbol_destroy(self.inner.as_mut());
+            ffi::symbol_destroy(self.inner.as_ptr());
         }
     }
 }
@@ -140,12 +168,12 @@ impl FuncSig {
         let Ok(return_len) = u16::try_from(return_len) else {
             panic!("number of returns ({return_len}) was bigger than u16::MAX");
         };
-        let mut inner = unsafe { nonnull(ffi::funcsig_new(call_conv, param_len, return_len)) };
+        let inner = unsafe { nonnull(ffi::funcsig_new(call_conv, param_len, return_len)) };
         for i in 0..param_len {
             let param = params.next().unwrap();
             let param = ffi::FuncParam { ty: param.ty };
             unsafe {
-                *ffi::funcsig_param(inner.as_mut(), i) = param;
+                *ffi::funcsig_param(inner.as_ptr(), i) = param;
             }
         }
         assert!(
@@ -158,7 +186,7 @@ impl FuncSig {
                 ty: return_param.ty,
             };
             unsafe {
-                *ffi::funcsig_return(inner.as_mut(), i) = return_param;
+                *ffi::funcsig_return(inner.as_ptr(), i) = return_param;
             }
         }
         assert!(
@@ -172,9 +200,14 @@ impl FuncSig {
 
 impl Drop for FuncSig {
     fn drop(&mut self) {
-        let &mut Self(mut inner) = self;
+        let &mut Self(inner) = self;
         unsafe {
-            ffi::funcsig_destroy(inner.as_mut());
+            ffi::funcsig_destroy(inner.as_ptr());
         }
     }
+}
+
+pub struct Func<'a> {
+    inner: NonNull<ffi::Func>,
+    phantom: PhantomData<&'a ()>,
 }
