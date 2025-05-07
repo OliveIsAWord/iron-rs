@@ -85,9 +85,22 @@ impl ParseCallbacks for RemoveFePrefix {
     fn enum_variant_name(
         &self,
         enum_name: Option<&str>,
-        mut original_variant_name: &str,
+        mut variant: &str,
         _variant_value: bindgen::callbacks::EnumVariantValue,
     ) -> Option<String> {
+        match variant {
+            "FE_ARCH_X86_64" => return Some("X86_64".into()),
+            // Prior art: rustc spells it `Stdcall`
+            // https://github.com/rust-lang/rust/blob/3ef8e64ce9f72ee8d600d55bc43b36eed069b252/compiler/rustc_abi/src/extern_abi.rs#L28
+            "FE_CCONV_STDCALL" => {}
+            "FE_CCONV_SYSV" => return Some("SysV".into()),
+            "FE_SIGNEXT" =>return Some("SignExt".into()),
+            "FE_ZEROEXT" =>return Some("ZeroExt".into()),
+            "FE_BITCAST" =>return Some("BitCast".into()),
+            "FE_I2F" =>return Some("I2F".into()),
+            "FE_F2I" =>return Some("F2I".into()),
+            _ => {}
+        }
         let enum_name = enum_name?;
         let _ = enum_name.chars().next().filter(char::is_ascii_uppercase)?; // stupid line for stupid problem
         let prefix = match enum_name {
@@ -119,24 +132,34 @@ impl ParseCallbacks for RemoveFePrefix {
             }
         };
         let mut stripped_name = String::new();
-        if let Some(no_underscore) = original_variant_name.strip_prefix('_') {
-            original_variant_name = no_underscore;
+        if let Some(no_underscore) = variant.strip_prefix('_') {
+            variant = no_underscore;
             stripped_name.push('_');
         }
-        original_variant_name = original_variant_name
+        variant = variant
             .strip_prefix(&prefix)
             .unwrap_or_else(|| {
-                panic!("badness {enum_name:?} {prefix:?} {original_variant_name:?}")
+                panic!("badness {enum_name:?} {prefix:?} {variant:?}")
             });
+        // `Trait::*` are constants, so keep them in SCREAMING_SNAKE_CASE
         if enum_name == "FeTrait" {
-            stripped_name.push_str(original_variant_name);
+            stripped_name.push_str(variant);
         } else {
+            // Format `FE_IADD` as `IAdd`, etc.
+            if enum_name == "FeInstKindGeneric" && !matches!(variant, "UPSILON") {
+                let type_prefix = variant.chars().next().unwrap();
+                if matches!(type_prefix, 'I' | 'U' | 'F') {
+                    variant = &variant[1..];
+                    stripped_name.push(type_prefix);
+                }
+            }
+            // Rewrite SCREAMING_SNAKE_CASE to TitleCase
             let mut capital = true;
-            for mut c in original_variant_name.chars() {
+            for mut c in variant.chars() {
                 if c == '_' {
                     assert!(
                         !capital,
-                        "double underscore in enum variant {original_variant_name:?}"
+                        "double underscore in enum variant {variant:?}"
                     );
                     capital = true;
                 } else {
