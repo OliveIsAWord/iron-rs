@@ -24,17 +24,18 @@ mod tests {
             let ret = insert_before((*entry).bookend, inst_return(f));
             return_set_arg(ret, 0, *(*f).params);
             codegen(f);
-            {
-                let mut db = MaybeUninit::uninit();
-                db_init(db.as_mut_ptr(), 2048);
-                let mut db = db.assume_init();
-                print_func(&raw mut db, f);
-                emit_asm(&raw mut db, f);
-                let bytes = std::slice::from_raw_parts(db.at, db.len);
-                let string = std::str::from_utf8_unchecked(bytes);
-                print!("{string}");
-            }
-            panic!()
+
+            let mut db = MaybeUninit::uninit();
+            db_init(db.as_mut_ptr(), 2048);
+            let mut db = db.assume_init();
+            emit_ir_func(&raw mut db, f, false);
+            emit_asm(&raw mut db, f);
+            let bytes = std::slice::from_raw_parts(db.at, db.len);
+            let string = std::str::from_utf8_unchecked(bytes);
+            assert_eq!(
+                string,
+                "global func \"id\" i32 -> i32 {\n  in \n    %1(t0): i32 = xr.mov %0(a0)\n    %2(a3): i32 = xr.mov %0(t0)\n    xr.ret \n  out \n}\nid:\n    mov  t0, a0\n    mov  a3, t0\n    ret  \n"
+            );
         }
     }
 }
