@@ -7,7 +7,8 @@ fn main() {
     let source_files = WalkDir::new("vendor/src/iron")
         .into_iter()
         .map(|entry| entry.unwrap().path().to_owned())
-        .filter(|entry| entry.extension().is_some_and(|ext| ext == "c"));
+        .filter(|entry| entry.extension().is_some_and(|ext| ext == "c"))
+        .inspect(|e| println!("cargo::rerun-if-changed={}", e.as_os_str().display()));
     let flags = &[
         "-std=gnu2x",
         "-Wno-deprecated-declarations",
@@ -26,14 +27,15 @@ fn main() {
         build.flag(flag);
     }
     build.compile("iron");
-
+    let header = "vendor/src/iron/iron.h";
+    println!("cargo::rerun-if-changed={header}");
     let bindings = bindgen::Builder::default()
-        .header("vendor/src/iron/iron.h")
+        .header(header)
         // Tell cargo to invalidate the built crate whenever any of the
         // included header files changed.
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
         .clang_arg("-std=c23")
-        .allowlist_file("vendor/src/iron/iron.h")
+        .allowlist_file(header)
         .use_core()
         .generate_cstr(true)
         .merge_extern_blocks(true)
