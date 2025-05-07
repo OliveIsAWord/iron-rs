@@ -94,11 +94,11 @@ impl ParseCallbacks for RemoveFePrefix {
             // https://github.com/rust-lang/rust/blob/3ef8e64ce9f72ee8d600d55bc43b36eed069b252/compiler/rustc_abi/src/extern_abi.rs#L28
             "FE_CCONV_STDCALL" => {}
             "FE_CCONV_SYSV" => return Some("SysV".into()),
-            "FE_SIGNEXT" =>return Some("SignExt".into()),
-            "FE_ZEROEXT" =>return Some("ZeroExt".into()),
-            "FE_BITCAST" =>return Some("BitCast".into()),
-            "FE_I2F" =>return Some("I2F".into()),
-            "FE_F2I" =>return Some("F2I".into()),
+            "FE_SIGNEXT" => return Some("SignExt".into()),
+            "FE_ZEROEXT" => return Some("ZeroExt".into()),
+            "FE_BITCAST" => return Some("BitCast".into()),
+            "FE_I2F" => return Some("I2F".into()),
+            "FE_F2I" => return Some("F2I".into()),
             _ => {}
         }
         let enum_name = enum_name?;
@@ -138,9 +138,7 @@ impl ParseCallbacks for RemoveFePrefix {
         }
         variant = variant
             .strip_prefix(&prefix)
-            .unwrap_or_else(|| {
-                panic!("badness {enum_name:?} {prefix:?} {variant:?}")
-            });
+            .unwrap_or_else(|| panic!("badness {enum_name:?} {prefix:?} {variant:?}"));
         // `Trait::*` are constants, so keep them in SCREAMING_SNAKE_CASE
         if enum_name == "FeTrait" {
             stripped_name.push_str(variant);
@@ -157,10 +155,7 @@ impl ParseCallbacks for RemoveFePrefix {
             let mut capital = true;
             for mut c in variant.chars() {
                 if c == '_' {
-                    assert!(
-                        !capital,
-                        "double underscore in enum variant {variant:?}"
-                    );
+                    assert!(!capital, "double underscore in enum variant {variant:?}");
                     capital = true;
                 } else {
                     if capital {
