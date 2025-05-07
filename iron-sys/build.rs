@@ -6,6 +6,8 @@ use walkdir::WalkDir;
 fn main() {
     let source_files = WalkDir::new("vendor/src/iron")
         .into_iter()
+        // The driver directory is for compiling Iron as an executable.
+        .filter_entry(|entry| entry.file_name() != "driver")
         .map(|entry| entry.unwrap().path().to_owned())
         .filter(|entry| entry.extension().is_some_and(|ext| ext == "c"))
         .inspect(|e| println!("cargo::rerun-if-changed={}", e.as_os_str().display()));
