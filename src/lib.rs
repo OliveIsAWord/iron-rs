@@ -113,7 +113,7 @@ impl Module {
         let name = name.into();
         let len = name.len();
         let Ok(len) = u16::try_from(len) else {
-            panic!("attempted to create a symbol with a name more than u16::MAX bytes: {name:?}");
+            panic!("symbol length ({len}) was greater than u16::MAX");
         };
         let ptr = if len == 0 {
             std::ptr::null()
@@ -218,10 +218,10 @@ impl FuncSig {
         let param_len = params.len();
         let return_len = returns.len();
         let Ok(param_len) = u16::try_from(param_len) else {
-            panic!("number of parameters ({param_len}) was bigger than u16::MAX");
+            panic!("number of parameters ({param_len}) was greater than u16::MAX");
         };
         let Ok(return_len) = u16::try_from(return_len) else {
-            panic!("number of returns ({return_len}) was bigger than u16::MAX");
+            panic!("number of returns ({return_len}) was greater than u16::MAX");
         };
         let inner = unsafe { nonnull(ffi::funcsig_new(call_conv, param_len, return_len)) };
         for i in 0..param_len {
@@ -277,6 +277,11 @@ impl<'a> Func<'a> {
     }
 
     pub fn get_param(&self, index: u16) -> InstRef<'_> {
+        let param_len = unsafe { (*(*self.inner.as_ptr()).sig).param_len };
+        assert!(
+            index < param_len,
+            "parameter index out of bounds: the len is {param_len} but the index is {index}"
+        );
         unsafe {
             let inner = ffi::func_param(self.inner.as_ptr(), index);
             InstRef::from_inner(inner)
