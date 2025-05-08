@@ -165,9 +165,9 @@ impl Drop for Module {
         unsafe {
             // `fe_func_destroy` is broken lmao
             let _ = inner;
-            // ffi::module_destroy(inner.as_ptr());
-            //ffi::ipool_destroy(&raw mut ipool);
-            //ffi::vrbuf_destroy(&raw mut vregs);
+            ffi::module_destroy(inner.as_ptr());
+            ffi::ipool_destroy(&raw mut ipool);
+            ffi::vrbuf_destroy(&raw mut vregs);
         }
     }
 }
@@ -180,7 +180,7 @@ pub struct Symbol {
 impl Drop for Symbol {
     fn drop(&mut self) {
         unsafe {
-            // ffi::symbol_destroy(self.inner.as_ptr());
+            ffi::symbol_destroy(self.inner.as_ptr());
         }
     }
 }
@@ -249,7 +249,7 @@ impl Drop for FuncSig {
     fn drop(&mut self) {
         let &mut Self(inner) = self;
         unsafe {
-            //ffi::funcsig_destroy(inner.as_ptr());
+            ffi::funcsig_destroy(inner.as_ptr());
         }
     }
 }
