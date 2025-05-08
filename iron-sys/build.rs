@@ -13,6 +13,9 @@ fn main() {
         .inspect(|e| println!("cargo::rerun-if-changed={}", e.as_os_str().display()));
     let flags = &[
         "-std=gnu2x",
+        "-Wall",
+        "-Wextra",
+        // "-Wpedantic",
         "-Wno-deprecated-declarations",
         "-Wno-incompatible-pointer-types-discards-qualifiers",
         "-Wno-initializer-overrides",
