@@ -3,7 +3,7 @@
 #[cfg(test)]
 mod tests;
 
-use std::{marker::PhantomData, mem::MaybeUninit, ptr::NonNull};
+use std::{fmt, marker::PhantomData, mem::MaybeUninit, ptr::NonNull};
 
 use iron_sys as ffi;
 
@@ -41,6 +41,37 @@ fn vrbuf_new(cap: usize) -> ffi::VRegBuffer {
     unsafe {
         ffi::vrbuf_init(vregs.as_mut_ptr(), cap);
         vregs.assume_init()
+    }
+}
+
+#[repr(transparent)]
+struct DataBuffer(ffi::DataBuffer);
+
+impl DataBuffer {
+    #[must_use]
+    fn new() -> Self {
+        Self::with_capacity(128)
+    }
+    // NOTE: a `cap` of less than 2 will be set to 2.
+    #[must_use]
+    fn with_capacity(cap: usize) -> Self {
+        let mut db = MaybeUninit::uninit();
+        Self(unsafe {
+            ffi::db_init(db.as_mut_ptr(), cap);
+            db.assume_init()
+        })
+    }
+    fn inner(&mut self) -> *mut ffi::DataBuffer {
+        &raw mut self.0
+    }
+    fn as_bytes(&self) -> &[u8] {
+        unsafe { std::slice::from_raw_parts(self.0.at, self.0.len) }
+    }
+    /// # Safety
+    /// This [`DataBuffer`] cannot have been used by any functions which did not generate valid UTF-8.
+    unsafe fn as_str(&self) -> &str {
+        let bytes = self.as_bytes();
+        unsafe { std::str::from_utf8_unchecked(bytes) }
     }
 }
 
@@ -107,6 +138,20 @@ impl Module {
             phantom: PhantomData,
         }
     }
+
+    pub fn codegen(self) -> String {
+        let mut db = DataBuffer::new();
+        let mut func = unsafe { (*self.inner.as_ptr()).funcs.first };
+        while !func.is_null() {
+            unsafe {
+                ffi::codegen(func);
+                ffi::emit_asm(db.inner(), func);
+                func = (*func).list_next;
+            }
+        }
+        let string = unsafe { db.as_str() };
+        string.trim().to_owned()
+    }
 }
 
 impl Drop for Module {
@@ -121,8 +166,8 @@ impl Drop for Module {
             // `fe_func_destroy` is broken lmao
             let _ = inner;
             // ffi::module_destroy(inner.as_ptr());
-            ffi::ipool_destroy(&raw mut ipool);
-            ffi::vrbuf_destroy(&raw mut vregs);
+            //ffi::ipool_destroy(&raw mut ipool);
+            //ffi::vrbuf_destroy(&raw mut vregs);
         }
     }
 }
@@ -135,7 +180,7 @@ pub struct Symbol {
 impl Drop for Symbol {
     fn drop(&mut self) {
         unsafe {
-            ffi::symbol_destroy(self.inner.as_ptr());
+            // ffi::symbol_destroy(self.inner.as_ptr());
         }
     }
 }
@@ -204,7 +249,7 @@ impl Drop for FuncSig {
     fn drop(&mut self) {
         let &mut Self(inner) = self;
         unsafe {
-            ffi::funcsig_destroy(inner.as_ptr());
+            //ffi::funcsig_destroy(inner.as_ptr());
         }
     }
 }
@@ -222,6 +267,24 @@ impl<'a> Func<'a> {
             phantom: PhantomData,
         }
     }
+
+    pub fn get_param(&self, index: u16) -> InstRef<'_> {
+        unsafe {
+            let inner = ffi::func_param(self.inner.as_ptr(), index);
+            InstRef::from_inner(inner)
+        }
+    }
+}
+
+impl fmt::Display for Func<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut db = DataBuffer::new();
+        let emitted = unsafe {
+            ffi::emit_ir_func(db.inner(), self.inner.as_ptr(), false);
+            db.as_str()
+        };
+        f.write_str(emitted.trim())
+    }
 }
 
 pub struct Block<'a> {
@@ -230,16 +293,74 @@ pub struct Block<'a> {
 }
 
 impl<'a> Block<'a> {
-    pub fn push(&self, inst: Inst<'a>) -> InstRef<'a> {
-        todo!()
+    pub fn push_return<IterReturns>(&self, returns: IterReturns)
+    where
+        IterReturns: IntoIterator<Item = InstRef<'a>>,
+        IterReturns::IntoIter: ExactSizeIterator,
+    {
+        // construct and initialize the return Inst
+        let mut returns = returns.into_iter();
+        let func = unsafe { (*self.inner.as_ptr()).func };
+        let fn_return_len = unsafe { (*(*func).sig).return_len };
+        assert_eq!(
+            usize::from(fn_return_len),
+            returns.len(),
+            "incorrect number of return values"
+        );
+        let inner = unsafe { ffi::inst_return(func) };
+        for i in 0..fn_return_len {
+            let arg = returns.next().unwrap().inner.as_ptr();
+            unsafe {
+                ffi::return_set_arg(inner, i, arg);
+            }
+        }
+        assert!(
+            returns.next().is_none(),
+            "`returns` violated ExactSizeIterator length"
+        );
+
+        // append it to the block
+        unsafe {
+            let bookend = (*self.inner.as_ptr()).bookend;
+            ffi::insert_before(bookend, inner);
+        }
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct InstRef<'a> {
     inner: NonNull<ffi::Inst>,
     phantom: PhantomData<&'a ()>,
 }
 
-pub enum Inst<'a> {
-    Return(Vec<InstRef<'a>>),
+impl<'a> InstRef<'a> {
+    unsafe fn from_inner(inner: *mut ffi::Inst) -> Self {
+        unsafe {
+            Self {
+                inner: nonnull(inner),
+                phantom: PhantomData,
+            }
+        }
+    }
 }
+
+// // maybe this is a cute abstraction?
+// pub enum Inst<'a> {
+//     Return(Vec<InstRef<'a>>),
+// }
+
+// impl<'a> Inst<'a> {
+//     unsafe fn into_ref(self, ipool: *mut ffi::InstPool) -> InstRef<'a> {
+//         match self {
+//             Self::Return(returns) => {
+//                 let fn_return_len = unsafe { (*(*(*self.inner.as_ptr()).func).sig).return_len };
+//                 assert_eq!(
+//                     usize::from(fn_return_len),
+//                     returns.len(),
+//                     "incorrect number of return values"
+//                 );
+//             }
+//         }
+//         todo!()
+//     }
+// }
