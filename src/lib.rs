@@ -75,6 +75,14 @@ impl DataBuffer {
     }
 }
 
+impl Drop for DataBuffer {
+    fn drop(&mut self) {
+        unsafe {
+            ffi::db_destroy(self.inner());
+        }
+    }
+}
+
 pub struct Module {
     inner: NonNull<ffi::Module>,
     // TODO: some methods like `create_func` would like to take a shared reference to `self`,
