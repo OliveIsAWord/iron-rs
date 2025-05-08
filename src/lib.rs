@@ -213,3 +213,33 @@ pub struct Func<'a> {
     inner: NonNull<ffi::Func>,
     phantom: PhantomData<&'a ()>,
 }
+
+impl<'a> Func<'a> {
+    pub fn entry_block(&self) -> Block<'a> {
+        let inner = unsafe { nonnull((*self.inner.as_ptr()).entry_block) };
+        Block {
+            inner,
+            phantom: PhantomData,
+        }
+    }
+}
+
+pub struct Block<'a> {
+    inner: NonNull<ffi::Block>,
+    phantom: PhantomData<&'a ()>,
+}
+
+impl<'a> Block<'a> {
+    pub fn push(&self, inst: Inst<'a>) -> InstRef<'a> {
+        todo!()
+    }
+}
+
+pub struct InstRef<'a> {
+    inner: NonNull<ffi::Inst>,
+    phantom: PhantomData<&'a ()>,
+}
+
+pub enum Inst<'a> {
+    Return(Vec<InstRef<'a>>),
+}
