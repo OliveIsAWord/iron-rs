@@ -8,6 +8,6 @@ fn main() {
         [FuncParam { ty: Ty::I32 }],
         [FuncParam { ty: Ty::I32 }],
     );
-    let meower = module.create_symbol("", SymbolBinding::Global);
+    let _meower = module.create_symbol("", SymbolBinding::Global);
     let func = module.create_func(func_symbol, func_sig);
 }

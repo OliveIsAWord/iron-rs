@@ -118,7 +118,9 @@ impl Drop for Module {
             _func_data: _,
         } = self;
         unsafe {
-            ffi::module_destroy(inner.as_ptr());
+            // `fe_func_destroy` is broken lmao
+            let _ = inner;
+            // ffi::module_destroy(inner.as_ptr());
             ffi::ipool_destroy(&raw mut ipool);
             ffi::vrbuf_destroy(&raw mut vregs);
         }
