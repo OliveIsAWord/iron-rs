@@ -1,5 +1,18 @@
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
+impl PartialEq for InstKind {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+impl Eq for InstKind {}
+
+impl From<InstKindGeneric> for InstKind {
+    fn from(value: InstKindGeneric) -> Self {
+        Self(value as u16)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::mem::MaybeUninit;

@@ -21,9 +21,7 @@ fn its_alive() {
 }
 
 #[test]
-#[should_panic(
-    expected = "symbol length (65536) was greater than u16::MAX"
-)]
+#[should_panic(expected = "symbol length (65536) was greater than u16::MAX")]
 fn symbol_too_long() {
     let mut module = Module::new(Arch::Xr17032, System::Freestanding);
     _ = module.create_symbol(

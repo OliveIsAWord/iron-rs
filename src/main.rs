@@ -27,5 +27,8 @@ fn main() {
     println!("{func2}");
     let code = module.codegen();
     println!("{code}");
-    assert_eq!(code, "f1:\n    mov  t0, a0\n    mov  a3, t0\n    ret  \nf2:\n    mov  FE_VREG_REAL_UNASSIGNED, a0\n    mov  a3, lr\n    ret");
+    assert_eq!(
+        code,
+        "f1:\n    mov  t0, a0\n    mov  a3, t0\n    ret  \nf2:\n    mov  FE_VREG_REAL_UNASSIGNED, a0\n    mov  a3, lr\n    ret"
+    );
 }

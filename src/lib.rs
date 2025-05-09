@@ -3,7 +3,13 @@
 #[cfg(test)]
 mod tests;
 
-use std::{cell::UnsafeCell, fmt, marker::PhantomData, mem::MaybeUninit, ptr::NonNull};
+use std::{
+    cell::UnsafeCell,
+    fmt,
+    marker::PhantomData,
+    mem::MaybeUninit,
+    ptr::{NonNull, null},
+};
 
 use iron_sys as ffi;
 
@@ -135,7 +141,7 @@ impl Module {
             ))
         };
         unsafe {
-            (*self._func_data.get()).push((symbol, sig));   
+            (*self._func_data.get()).push((symbol, sig));
         }
         Func {
             inner,
@@ -329,6 +335,18 @@ impl<'a> Block<'a> {
         );
 
         // append it to the block
+
+        // Assert that all the instruction inputs actually come from this function. Our invariant lifetimes should make this statically impossible (TODO: actually implement this), but it hardly hurts to double check.
+        let inst_ref = unsafe { InstRef::from_inner(inner) };
+        for &input in inst_ref.inputs() {
+            let source_block = unsafe { InstRef::from_inner(input) }.find_block();
+            let source_func = unsafe { (*source_block).func };
+            debug_assert_eq!(
+                source_func, func,
+                "instruction input from a different function"
+            );
+        }
+
         unsafe {
             let bookend = (*self.inner.as_ptr()).bookend;
             ffi::insert_before(bookend, inner);
@@ -350,6 +368,27 @@ impl<'a> InstRef<'a> {
                 phantom: PhantomData,
             }
         }
+    }
+    fn inputs(self) -> &'a [*mut ffi::Inst] {
+        let mut input_len = usize::MAX;
+        let input_start = unsafe {
+            // it's *probably* fine to pass a null pointer for target :3
+            ffi::inst_list_inputs(null(), self.inner.as_ptr(), &raw mut input_len)
+        };
+        assert_ne!(
+            input_len,
+            usize::MAX,
+            "uninitialized out parameter `input_len`"
+        );
+        unsafe { std::slice::from_raw_parts(input_start, input_len) }
+    }
+    fn find_block(self) -> *mut ffi::Block {
+        let mut inst: *const ffi::Inst = self.inner.as_ptr();
+        while unsafe { (*inst).kind } != ffi::InstKind::from(ffi::InstKindGeneric::Bookend) {
+            inst = unsafe { (*inst).next };
+        }
+        let bookend: *const ffi::Inst<ffi::InstBookend> = inst.cast();
+        unsafe { (*bookend).extra.block }
     }
 }
 
