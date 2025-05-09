@@ -1,6 +1,9 @@
 use std::{env, path::PathBuf};
 
-use bindgen::{AliasVariation, callbacks::ParseCallbacks};
+use bindgen::{
+    AliasVariation,
+    callbacks::{EnumVariantCustomBehavior, ParseCallbacks},
+};
 use walkdir::WalkDir;
 
 fn main() {
@@ -60,6 +63,9 @@ fn main() {
         ])
         // stop `f32` from being escaped as `f32_`, etc.
         .blocklist_item("f[0-9]+_?")
+        // `fe__` (double underscore) prefix is for internal items
+        .blocklist_item("FE__.*|fe__.*")
+        .opaque_type("Fe_.*")
         .default_enum_style(bindgen::EnumVariation::Rust {
             non_exhaustive: true,
         })
@@ -89,12 +95,27 @@ impl ParseCallbacks for RemoveFePrefix {
             .find_map(|prefix| original_item_name.strip_prefix(prefix))
             .map(str::to_owned)
     }
+    fn enum_variant_behavior(
+        &self,
+        _enum_name: Option<&str>,
+        variant: &str,
+        _variant_value: bindgen::callbacks::EnumVariantValue,
+    ) -> Option<bindgen::callbacks::EnumVariantCustomBehavior> {
+        if variant.starts_with("FE__") {
+            Some(EnumVariantCustomBehavior::Hide)
+        } else {
+            None
+        }
+    }
     fn enum_variant_name(
         &self,
         enum_name: Option<&str>,
         mut variant: &str,
         _variant_value: bindgen::callbacks::EnumVariantValue,
     ) -> Option<String> {
+        if variant.starts_with("FE__") {
+            return None;
+        }
         match variant {
             "FE_ARCH_X86_64" => return Some("X86_64".into()),
             // Prior art: rustc spells it `Stdcall`
@@ -140,8 +161,10 @@ impl ParseCallbacks for RemoveFePrefix {
         };
         let mut stripped_name = String::new();
         if let Some(no_underscore) = variant.strip_prefix('_') {
-            variant = no_underscore;
-            stripped_name.push('_');
+            _ = no_underscore;
+            panic!("unexpected leading underscore: {variant:?}");
+            // variant = no_underscore;
+            // stripped_name.push('_');
         }
         variant = variant
             .strip_prefix(&prefix)
