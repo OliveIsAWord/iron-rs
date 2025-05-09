@@ -3,7 +3,7 @@
 #[cfg(test)]
 mod tests;
 
-use std::{fmt, marker::PhantomData, mem::MaybeUninit, ptr::NonNull};
+use std::{cell::UnsafeCell, fmt, marker::PhantomData, mem::MaybeUninit, ptr::NonNull};
 
 use iron_sys as ffi;
 
@@ -85,12 +85,10 @@ impl Drop for DataBuffer {
 
 pub struct Module {
     inner: NonNull<ffi::Module>,
-    // TODO: some methods like `create_func` would like to take a shared reference to `self`,
-    // in which case these would need to be wrapped with some interior mutability type.
-    ipool: ffi::InstPool,
-    vregs: ffi::VRegBuffer,
+    ipool: UnsafeCell<ffi::InstPool>,
+    vregs: UnsafeCell<ffi::VRegBuffer>,
     // We own the memory for `Symbol` and `FuncSig` for each function
-    _func_data: Vec<(Symbol, FuncSig)>,
+    _func_data: UnsafeCell<Vec<(Symbol, FuncSig)>>,
 }
 
 impl Module {
@@ -102,9 +100,9 @@ impl Module {
         };
         Self {
             inner,
-            ipool: ipool_new(),
-            vregs: vrbuf_new(64),
-            _func_data: vec![],
+            ipool: UnsafeCell::new(ipool_new()),
+            vregs: UnsafeCell::new(vrbuf_new(64)),
+            _func_data: UnsafeCell::new(vec![]),
         }
     }
 
@@ -125,22 +123,20 @@ impl Module {
     }
 
     #[must_use]
-    pub fn create_func<'a>(&'a mut self, symbol: Symbol, sig: FuncSig) -> Func<'a> {
-        unsafe {
-            (*self.inner.as_ptr()).funcs.first = std::ptr::null_mut();
-        }
-        //panic!("wtf");
+    pub fn create_func<'a>(&'a self, symbol: Symbol, sig: FuncSig) -> Func<'a> {
         let inner = unsafe {
             nonnull(ffi::func_new(
                 self.inner.as_ptr(),
                 symbol.inner.as_ptr(),
                 sig.0.as_ptr(),
                 // NOTE: `FeFunc` holds a pointer to these two for its entire lifetime
-                &raw mut self.ipool,
-                &raw mut self.vregs,
+                self.ipool.get(),
+                self.vregs.get(),
             ))
         };
-        self._func_data.push((symbol, sig));
+        unsafe {
+            (*self._func_data.get()).push((symbol, sig));   
+        }
         Func {
             inner,
             phantom: PhantomData,
@@ -164,18 +160,18 @@ impl Module {
 
 impl Drop for Module {
     fn drop(&mut self) {
-        let &mut Self {
+        let Self {
             inner,
-            mut ipool,
-            mut vregs,
+            ipool,
+            vregs,
             _func_data: _,
         } = self;
         unsafe {
             // `fe_func_destroy` is broken lmao
             let _ = inner;
             ffi::module_destroy(inner.as_ptr());
-            ffi::ipool_destroy(&raw mut ipool);
-            ffi::vrbuf_destroy(&raw mut vregs);
+            ffi::ipool_destroy(ipool.get());
+            ffi::vrbuf_destroy(vregs.get());
         }
     }
 }
