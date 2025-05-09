@@ -1,5 +1,7 @@
 //! The Iron compiler backend.
 
+#![warn(missing_debug_implementations)]
+
 #[cfg(test)]
 mod tests;
 
@@ -8,7 +10,7 @@ use std::{
     fmt,
     marker::PhantomData,
     mem::MaybeUninit,
-    ptr::{NonNull, null},
+    ptr::{self, NonNull, null},
 };
 
 use iron_sys as ffi;
@@ -91,6 +93,7 @@ impl Drop for DataBuffer {
     }
 }
 
+#[derive(Debug)]
 pub struct Module {
     inner: NonNull<ffi::Module>,
     ipool: UnsafeCell<ffi::InstPool>,
@@ -102,10 +105,7 @@ pub struct Module {
 impl Module {
     #[must_use]
     pub fn new(arch: Arch, system: System) -> Self {
-        let inner = unsafe {
-            let ptr = ffi::module_new(arch, system);
-            nonnull(ptr)
-        };
+        let inner = unsafe { nonnull(ffi::module_new(arch, system)) };
         Self {
             inner,
             ipool: UnsafeCell::new(ipool_new()),
@@ -187,6 +187,7 @@ impl Drop for Module {
     }
 }
 
+#[derive(Debug)]
 pub struct Symbol {
     inner: NonNull<ffi::Symbol>,
     _name: String, // kept only to keep the symbol name allocation live
@@ -205,6 +206,7 @@ pub struct FuncParam {
     pub ty: Ty,
 }
 
+#[derive(Debug)]
 pub struct FuncSig(NonNull<ffi::FuncSig>);
 
 impl FuncSig {
@@ -257,6 +259,9 @@ impl FuncSig {
         );
         Self(inner)
     }
+    fn inner(&self) -> ffi::FuncSig {
+        unsafe { ptr::read(self.0.as_ptr()) }
+    }
     // TODO: should we have accessor methods for params and returns? that would mean exposing the FFI types, which may be hazardous
 }
 
@@ -269,14 +274,40 @@ impl Drop for FuncSig {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct Func<'brand> {
-    inner: NonNull<ffi::Func>,
-    _marker: InvariantLifetime<'brand>,
+impl Clone for FuncSig {
+    fn clone(&self) -> Self {
+        let inner = self.inner();
+        let cloned_inner = unsafe {
+            nonnull(ffi::funcsig_new(
+                inner.cconv,
+                inner.param_len,
+                inner.return_len,
+            ))
+        };
+        let self_params: *const ffi::FuncParam =
+            unsafe { &raw const (*self.0.as_ptr()).params }.cast();
+        let cloned_params: *mut ffi::FuncParam =
+            unsafe { &raw mut (*cloned_inner.as_ptr()).params }.cast();
+        // feeling a little fruity, let's just copy everything manually
+        unsafe {
+            ptr::copy_nonoverlapping(
+                self_params,
+                cloned_params,
+                usize::from(inner.param_len + inner.return_len),
+            );
+        }
+        Self(cloned_inner)
+    }
 }
 
-impl<'brand> Func<'brand> {
-    pub fn entry_block(self) -> Block<'brand> {
+#[derive(Clone, Copy, Debug)]
+pub struct Func<'func> {
+    inner: NonNull<ffi::Func>,
+    _marker: InvariantLifetime<'func>,
+}
+
+impl<'func> Func<'func> {
+    pub fn entry_block(self) -> Block<'func> {
         let inner = unsafe { nonnull((*self.inner.as_ptr()).entry_block) };
         Block {
             inner,
@@ -284,7 +315,7 @@ impl<'brand> Func<'brand> {
         }
     }
 
-    pub fn get_param(self, index: u16) -> InstRef<'brand> {
+    pub fn get_param(self, index: u16) -> InstRef<'func> {
         let param_len = unsafe { (*(*self.inner.as_ptr()).sig).param_len };
         assert!(
             index < param_len,

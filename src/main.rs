@@ -11,11 +11,7 @@ fn main() {
         [FuncParam { ty: Ty::I32 }],
     );
     let func_symbol2 = module.create_symbol("f2", SymbolBinding::Global);
-    let func_sig2 = FuncSig::new(
-        CallConv::Jackal,
-        [FuncParam { ty: Ty::I32 }],
-        [FuncParam { ty: Ty::I32 }],
-    );
+    let func_sig2 = func_sig1.clone();
     let mut meower: Vec<Func> = vec![];
     module.create_func(func_symbol1, func_sig1, |func1| {
         module.create_func(func_symbol2, func_sig2, |func2| {
