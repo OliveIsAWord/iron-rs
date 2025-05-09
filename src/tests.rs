@@ -31,15 +31,15 @@ fn symbol_too_long() {
     );
 }
 
-/*
 #[test]
 #[should_panic(expected = "parameter index out of bounds: the len is 0 but the index is 0")]
 fn out_of_bounds_param() {
     let mut module = Module::new(Arch::Xr17032, System::Freestanding);
     let func_symbol = module.create_symbol("out_of_bounds", SymbolBinding::Global);
     let func_sig = FuncSig::new(CallConv::Jackal, [], []);
-    let func = module.create_func(func_symbol, func_sig);
-    _ = func.get_param(0);
+    module.create_func(func_symbol, func_sig, |func| {
+        func.get_param(0);
+    });
 }
 
 #[test]
@@ -53,9 +53,8 @@ fn incorrect_number_of_return_values() {
         [FuncParam { ty: Ty::I32 }],
         [FuncParam { ty: Ty::I32 }],
     );
-    let _meower = module.create_symbol("", SymbolBinding::Global);
-    let func = module.create_func(func_symbol, func_sig);
-    let entry = func.entry_block();
-    entry.push_return([]);
+    module.create_func(func_symbol, func_sig, |func| {
+        let entry = func.entry_block();
+        entry.push_return([]);
+    });
 }
-*/
