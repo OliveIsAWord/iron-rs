@@ -1,3 +1,4 @@
+#![allow(unused_mut, unused_variables)]
 use iron_rs::*;
 
 fn main() {
@@ -15,20 +16,14 @@ fn main() {
         [FuncParam { ty: Ty::I32 }],
         [FuncParam { ty: Ty::I32 }],
     );
-    let func1 = module.create_func(func_symbol1, func_sig1);
-    let func2 = module.create_func(func_symbol2, func_sig2);
-    let param1 = func1.get_param(0);
-    let param2 = func2.get_param(0);
-    let entry1 = func1.entry_block();
-    let entry2 = func2.entry_block();
-    entry1.push_return([param2]);
-    entry2.push_return([param1]);
-    println!("{func1}");
-    println!("{func2}");
-    let code = module.codegen();
-    println!("{code}");
-    assert_eq!(
-        code,
-        "f1:\n    mov  t0, a0\n    mov  a3, t0\n    ret  \nf2:\n    mov  FE_VREG_REAL_UNASSIGNED, a0\n    mov  a3, lr\n    ret"
-    );
+    let mut meower: Vec<Func> = vec![];
+    module.create_func(func_symbol1, func_sig1, |func1| {
+        module.create_func(func_symbol2, func_sig2, |func2| {
+            let param1 = func1.get_param(0);
+            let entry2 = func2.entry_block();
+            // both of these give errors for a borrow escaping a closure
+            //entry2.push_return([param1]);
+            //meower.push(func1);
+        });
+    });
 }

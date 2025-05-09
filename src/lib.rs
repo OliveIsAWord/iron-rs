@@ -19,6 +19,8 @@ use ffi::{InstKind, InstKindGeneric, RegStatus, Regclass, SymbolKind, Trait, VRe
 
 pub use ffi::{Arch, CallConv, SymbolBinding, System, Ty};
 
+type InvariantLifetime<'brand> = PhantomData<fn(&'brand ()) -> &'brand ()>;
+
 #[must_use]
 const unsafe fn nonnull<T>(ptr: *mut T) -> NonNull<T> {
     #[cfg(debug_assertions)]
@@ -128,8 +130,10 @@ impl Module {
         Symbol { inner, _name: name }
     }
 
-    #[must_use]
-    pub fn create_func<'a>(&'a self, symbol: Symbol, sig: FuncSig) -> Func<'a> {
+    pub fn create_func<F>(&self, symbol: Symbol, sig: FuncSig, f: F)
+    where
+        F: for<'brand> FnOnce(Func<'brand>),
+    {
         let inner = unsafe {
             nonnull(ffi::func_new(
                 self.inner.as_ptr(),
@@ -143,10 +147,11 @@ impl Module {
         unsafe {
             (*self._func_data.get()).push((symbol, sig));
         }
-        Func {
+        let func = Func {
             inner,
-            phantom: PhantomData,
-        }
+            _marker: PhantomData,
+        };
+        f(func)
     }
 
     pub fn codegen(self) -> String {
@@ -184,7 +189,7 @@ impl Drop for Module {
 
 pub struct Symbol {
     inner: NonNull<ffi::Symbol>,
-    _name: String,
+    _name: String, // kept only to keep the symbol name allocation live
 }
 
 impl Drop for Symbol {
@@ -264,21 +269,22 @@ impl Drop for FuncSig {
     }
 }
 
-pub struct Func<'a> {
+#[derive(Clone, Copy, Debug)]
+pub struct Func<'brand> {
     inner: NonNull<ffi::Func>,
-    phantom: PhantomData<&'a ()>,
+    _marker: InvariantLifetime<'brand>,
 }
 
-impl<'a> Func<'a> {
-    pub fn entry_block(&self) -> Block<'a> {
+impl<'brand> Func<'brand> {
+    pub fn entry_block(self) -> Block<'brand> {
         let inner = unsafe { nonnull((*self.inner.as_ptr()).entry_block) };
         Block {
             inner,
-            phantom: PhantomData,
+            _marker: PhantomData,
         }
     }
 
-    pub fn get_param(&self, index: u16) -> InstRef<'_> {
+    pub fn get_param(self, index: u16) -> InstRef<'brand> {
         let param_len = unsafe { (*(*self.inner.as_ptr()).sig).param_len };
         assert!(
             index < param_len,
@@ -302,15 +308,16 @@ impl fmt::Display for Func<'_> {
     }
 }
 
-pub struct Block<'a> {
+#[derive(Clone, Copy, Debug)]
+pub struct Block<'func> {
     inner: NonNull<ffi::Block>,
-    phantom: PhantomData<&'a ()>,
+    _marker: InvariantLifetime<'func>,
 }
 
-impl<'a> Block<'a> {
-    pub fn push_return<IterReturns>(&self, returns: IterReturns)
+impl<'func> Block<'func> {
+    pub fn push_return<IterReturns>(self, returns: IterReturns)
     where
-        IterReturns: IntoIterator<Item = InstRef<'a>>,
+        IterReturns: IntoIterator<Item = InstRef<'func>>,
         IterReturns::IntoIter: ExactSizeIterator,
     {
         // construct and initialize the return Inst
@@ -334,9 +341,7 @@ impl<'a> Block<'a> {
             "`returns` violated ExactSizeIterator length"
         );
 
-        // append it to the block
-
-        // Assert that all the instruction inputs actually come from this function. Our invariant lifetimes should make this statically impossible (TODO: actually implement this), but it hardly hurts to double check.
+        // Assert that all the instruction inputs actually come from this function. Our 'brand lifetimes should make this statically impossible, but it hardly hurts to double check.
         let inst_ref = unsafe { InstRef::from_inner(inner) };
         for &input in inst_ref.inputs() {
             let source_block = unsafe { InstRef::from_inner(input) }.find_block();
@@ -347,6 +352,7 @@ impl<'a> Block<'a> {
             );
         }
 
+        // append it to the block
         unsafe {
             let bookend = (*self.inner.as_ptr()).bookend;
             ffi::insert_before(bookend, inner);
@@ -354,22 +360,22 @@ impl<'a> Block<'a> {
     }
 }
 
-#[derive(Clone, Copy)]
-pub struct InstRef<'a> {
+#[derive(Clone, Copy, Debug)]
+pub struct InstRef<'func> {
     inner: NonNull<ffi::Inst>,
-    phantom: PhantomData<&'a ()>,
+    _marker: InvariantLifetime<'func>,
 }
 
-impl<'a> InstRef<'a> {
+impl<'func> InstRef<'func> {
     unsafe fn from_inner(inner: *mut ffi::Inst) -> Self {
         unsafe {
             Self {
                 inner: nonnull(inner),
-                phantom: PhantomData,
+                _marker: PhantomData,
             }
         }
     }
-    fn inputs(self) -> &'a [*mut ffi::Inst] {
+    fn inputs(self) -> &'func [*mut ffi::Inst] {
         let mut input_len = usize::MAX;
         let input_start = unsafe {
             // it's *probably* fine to pass a null pointer for target :3
