@@ -7,6 +7,8 @@ use bindgen::{
 use walkdir::WalkDir;
 
 fn main() {
+    let header = "vendor/src/iron/iron.h";
+    println!("cargo::rerun-if-changed={header}");
     let source_files = WalkDir::new("vendor/src/iron")
         .into_iter()
         // The driver directory is for compiling Iron as an executable.
@@ -35,8 +37,6 @@ fn main() {
         build.flag(flag);
     }
     build.compile("iron");
-    let header = "vendor/src/iron/iron.h";
-    println!("cargo::rerun-if-changed={header}");
     let bindings = bindgen::Builder::default()
         .header(header)
         // Tell cargo to invalidate the built crate whenever any of the
