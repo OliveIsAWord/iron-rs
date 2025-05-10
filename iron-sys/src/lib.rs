@@ -1,4 +1,8 @@
-include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
+#![allow(clippy::pedantic, clippy::nursery)]
+mod ffi {
+    include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
+}
+pub use ffi::*;
 
 impl PartialEq for InstKind {
     fn eq(&self, other: &Self) -> bool {
