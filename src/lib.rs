@@ -94,28 +94,38 @@ impl Drop for DataBuffer {
 }
 
 #[derive(Debug)]
-pub struct Module {
+pub struct Module<'module> {
     inner: NonNull<ffi::Module>,
     ipool: UnsafeCell<ffi::InstPool>,
     vregs: UnsafeCell<ffi::VRegBuffer>,
     // We own the memory for `Symbol` and `FuncSig` for each function
     _func_data: UnsafeCell<Vec<(Symbol, FuncSig)>>,
+    _marker: InvariantLifetime<'module>,
 }
 
-impl Module {
+impl<'module> Module<'module> {
     #[must_use]
-    pub fn new(arch: Arch, system: System) -> Self {
+    fn new_owned(arch: Arch, system: System) -> Self {
         let inner = unsafe { nonnull(ffi::module_new(arch, system)) };
         Self {
             inner,
             ipool: UnsafeCell::new(ipool_new()),
             vregs: UnsafeCell::new(vrbuf_new(64)),
             _func_data: UnsafeCell::new(vec![]),
+            _marker: PhantomData,
         }
     }
 
+    pub fn new<F, R>(arch: Arch, system: System, f: F) -> R
+    where
+        F: for<'module_brand> FnOnce(Module<'module_brand>) -> R,
+    {
+        let module = Self::new_owned(arch, system);
+        f(module)
+    }
+
     #[must_use]
-    pub fn create_symbol(&mut self, name: impl Into<String>, binding: SymbolBinding) -> Symbol {
+    pub fn create_symbol(&self, name: impl Into<String>, binding: SymbolBinding) -> Symbol {
         let name = name.into();
         let len = name.len();
         let Ok(len) = u16::try_from(len) else {
@@ -130,9 +140,9 @@ impl Module {
         Symbol { inner, _name: name }
     }
 
-    pub fn create_func<F>(&self, symbol: Symbol, sig: FuncSig, f: F)
+    pub fn create_func<F, R>(&self, symbol: Symbol, sig: FuncSig, f: F) -> R
     where
-        F: for<'brand> FnOnce(Func<'brand>),
+        F: for<'func_brand> FnOnce(Func<'module, 'func_brand>) -> R,
     {
         let inner = unsafe {
             nonnull(ffi::func_new(
@@ -149,7 +159,20 @@ impl Module {
         }
         let func = Func {
             inner,
-            _marker: PhantomData,
+            _marker1: PhantomData,
+            _marker2: PhantomData,
+        };
+        f(func)
+    }
+
+    pub fn edit_func<F, R>(&self, func_ref: FuncRef<'module>, f: F) -> R
+    where
+        F: for<'func_brand> FnOnce(Func<'module, 'func_brand>) -> R,
+    {
+        let func = Func {
+            inner: func_ref.inner,
+            _marker1: self._marker,
+            _marker2: PhantomData,
         };
         f(func)
     }
@@ -169,13 +192,14 @@ impl Module {
     }
 }
 
-impl Drop for Module {
+impl Drop for Module<'_> {
     fn drop(&mut self) {
         let Self {
             inner,
             ipool,
             vregs,
             _func_data: _,
+            _marker: _,
         } = self;
         unsafe {
             // `fe_func_destroy` is broken lmao
@@ -301,17 +325,19 @@ impl Clone for FuncSig {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct Func<'func> {
+pub struct Func<'module, 'func> {
     inner: NonNull<ffi::Func>,
-    _marker: InvariantLifetime<'func>,
+    _marker1: InvariantLifetime<'func>,
+    _marker2: InvariantLifetime<'module>,
 }
 
-impl<'func> Func<'func> {
-    pub fn entry_block(self) -> Block<'func> {
+impl<'module, 'func> Func<'module, 'func> {
+    pub fn entry_block(self) -> Block<'module, 'func> {
         let inner = unsafe { nonnull((*self.inner.as_ptr()).entry_block) };
         Block {
             inner,
-            _marker: PhantomData,
+            _marker1: self._marker1,
+            _marker2: self._marker2,
         }
     }
 
@@ -326,9 +352,16 @@ impl<'func> Func<'func> {
             InstRef::from_inner(inner)
         }
     }
+
+    pub fn get_ref(self) -> FuncRef<'module> {
+        FuncRef {
+            inner: self.inner,
+            _marker: self._marker2,
+        }
+    }
 }
 
-impl fmt::Display for Func<'_> {
+impl fmt::Display for Func<'_, '_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut db = DataBuffer::new();
         let emitted = unsafe {
@@ -340,12 +373,25 @@ impl fmt::Display for Func<'_> {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct Block<'func> {
-    inner: NonNull<ffi::Block>,
-    _marker: InvariantLifetime<'func>,
+pub struct FuncRef<'module> {
+    inner: NonNull<ffi::Func>,
+    _marker: InvariantLifetime<'module>,
 }
 
-impl<'func> Block<'func> {
+impl<'module> From<Func<'module, '_>> for FuncRef<'module> {
+    fn from(value: Func<'module, '_>) -> Self {
+        value.get_ref()
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Block<'module, 'func> {
+    inner: NonNull<ffi::Block>,
+    _marker1: InvariantLifetime<'func>,
+    _marker2: InvariantLifetime<'module>,
+}
+
+impl<'module, 'func> Block<'module, 'func> {
     pub fn push_return<IterReturns>(self, returns: IterReturns)
     where
         IterReturns: IntoIterator<Item = InstRef<'func>>,
@@ -388,6 +434,11 @@ impl<'func> Block<'func> {
             let bookend = (*self.inner.as_ptr()).bookend;
             ffi::insert_before(bookend, inner);
         }
+    }
+
+    pub fn push_direct_call(&self, func: impl Into<FuncRef<'module>>) {
+        _ = func;
+        todo!();
     }
 }
 
