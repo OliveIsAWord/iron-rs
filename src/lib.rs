@@ -1,6 +1,7 @@
 //! The Iron compiler backend.
 
 #![warn(missing_debug_implementations)]
+#![allow(clippy::new_ret_no_self)]
 
 #[cfg(test)]
 mod tests;
@@ -21,7 +22,21 @@ use ffi::{InstKind, InstKindGeneric, RegStatus, Regclass, SymbolKind, Trait, VRe
 
 pub use ffi::{Arch, CallConv, SymbolBinding, System, Ty};
 
-type InvariantLifetime<'brand> = PhantomData<fn(&'brand ()) -> &'brand ()>;
+#[derive(Clone, Copy, Debug)]
+struct InvariantOn<'brand> {
+    _marker: PhantomData<fn(&'brand ()) -> &'brand ()>,
+}
+
+impl<'brand> InvariantOn<'brand> {
+    pub fn new<F, R>(f: F) -> R
+    where
+        F: for<'a> FnOnce(InvariantOn<'a>) -> R,
+    {
+        f(Self {
+            _marker: PhantomData,
+        })
+    }
+}
 
 #[must_use]
 const unsafe fn nonnull<T>(ptr: *mut T) -> NonNull<T> {
@@ -100,19 +115,19 @@ pub struct Module<'module> {
     vregs: UnsafeCell<ffi::VRegBuffer>,
     // We own the memory for `Symbol` and `FuncSig` for each function
     _func_data: UnsafeCell<Vec<(Symbol, FuncSig)>>,
-    _marker: InvariantLifetime<'module>,
+    lifetime_module: InvariantOn<'module>,
 }
 
 impl<'module> Module<'module> {
     #[must_use]
-    fn new_owned(arch: Arch, system: System) -> Self {
+    fn new_owned(arch: Arch, system: System, lifetime_module: InvariantOn<'module>) -> Self {
         let inner = unsafe { nonnull(ffi::module_new(arch, system)) };
         Self {
             inner,
             ipool: UnsafeCell::new(ipool_new()),
             vregs: UnsafeCell::new(vrbuf_new(64)),
             _func_data: UnsafeCell::new(vec![]),
-            _marker: PhantomData,
+            lifetime_module,
         }
     }
 
@@ -120,8 +135,10 @@ impl<'module> Module<'module> {
     where
         F: for<'module_brand> FnOnce(Module<'module_brand>) -> R,
     {
-        let module = Self::new_owned(arch, system);
-        f(module)
+        InvariantOn::new(|lifetime_module| {
+            let module = Module::new_owned(arch, system, lifetime_module);
+            f(module)
+        })
     }
 
     #[must_use]
@@ -164,24 +181,25 @@ impl<'module> Module<'module> {
         unsafe {
             (*self._func_data.get()).push((symbol, sig));
         }
-        let func = Func {
+        let func_ref = FuncRef {
             inner,
-            _marker1: PhantomData,
-            _marker2: PhantomData,
+            _lifetime_module: self.lifetime_module,
         };
-        f(func)
+        self.edit_func(func_ref, f)
     }
 
     pub fn edit_func<F, R>(&self, func_ref: FuncRef<'module>, f: F) -> R
     where
         F: for<'func_brand> FnOnce(Func<'module, 'func_brand>) -> R,
     {
-        let func = Func {
-            inner: func_ref.inner,
-            _marker1: self._marker,
-            _marker2: PhantomData,
-        };
-        f(func)
+        InvariantOn::new(|lifetime_func| {
+            let func = Func {
+                inner: func_ref.inner,
+                lifetime_func,
+                lifetime_module: self.lifetime_module,
+            };
+            f(func)
+        })
     }
 
     pub fn codegen(self) -> String {
@@ -206,7 +224,7 @@ impl Drop for Module<'_> {
             ipool,
             vregs,
             _func_data: _,
-            _marker: _,
+            lifetime_module: _,
         } = self;
         unsafe {
             // `fe_func_destroy` is broken lmao
@@ -334,8 +352,8 @@ impl Clone for FuncSig {
 #[derive(Clone, Copy, Debug)]
 pub struct Func<'module, 'func> {
     inner: NonNull<ffi::Func>,
-    _marker1: InvariantLifetime<'func>,
-    _marker2: InvariantLifetime<'module>,
+    lifetime_func: InvariantOn<'func>,
+    lifetime_module: InvariantOn<'module>,
 }
 
 impl<'module, 'func> Func<'module, 'func> {
@@ -343,8 +361,8 @@ impl<'module, 'func> Func<'module, 'func> {
         let inner = unsafe { nonnull((*self.inner.as_ptr()).entry_block) };
         Block {
             inner,
-            _marker1: self._marker1,
-            _marker2: self._marker2,
+            lifetime_func: self.lifetime_func,
+            _lifetime_module: self.lifetime_module,
         }
     }
 
@@ -356,14 +374,14 @@ impl<'module, 'func> Func<'module, 'func> {
         );
         unsafe {
             let inner = ffi::func_param(self.inner.as_ptr(), index);
-            InstRef::from_inner(inner)
+            InstRef::from_inner(inner, self.lifetime_func)
         }
     }
 
     pub fn get_ref(self) -> FuncRef<'module> {
         FuncRef {
             inner: self.inner,
-            _marker: self._marker2,
+            _lifetime_module: self.lifetime_module,
         }
     }
 }
@@ -382,7 +400,7 @@ impl fmt::Display for Func<'_, '_> {
 #[derive(Clone, Copy, Debug)]
 pub struct FuncRef<'module> {
     inner: NonNull<ffi::Func>,
-    _marker: InvariantLifetime<'module>,
+    _lifetime_module: InvariantOn<'module>,
 }
 
 impl<'module> From<Func<'module, '_>> for FuncRef<'module> {
@@ -394,8 +412,8 @@ impl<'module> From<Func<'module, '_>> for FuncRef<'module> {
 #[derive(Clone, Copy, Debug)]
 pub struct Block<'module, 'func> {
     inner: NonNull<ffi::Block>,
-    _marker1: InvariantLifetime<'func>,
-    _marker2: InvariantLifetime<'module>,
+    lifetime_func: InvariantOn<'func>,
+    _lifetime_module: InvariantOn<'module>,
 }
 
 impl<'module, 'func> Block<'module, 'func> {
@@ -426,9 +444,10 @@ impl<'module, 'func> Block<'module, 'func> {
         );
 
         // Assert that all the instruction inputs actually come from this function. Our 'brand lifetimes should make this statically impossible, but it hardly hurts to double check.
-        let inst_ref = unsafe { InstRef::from_inner(inner) };
+        let inst_ref = unsafe { InstRef::from_inner(inner, self.lifetime_func) };
         for &input in inst_ref.inputs() {
-            let source_block = unsafe { InstRef::from_inner(input) }.find_block();
+            let source_block =
+                unsafe { InstRef::from_inner(input, self.lifetime_func) }.find_block();
             let source_func = unsafe { (*source_block).func };
             debug_assert_eq!(
                 source_func, func,
@@ -452,15 +471,16 @@ impl<'module, 'func> Block<'module, 'func> {
 #[derive(Clone, Copy, Debug)]
 pub struct InstRef<'func> {
     inner: NonNull<ffi::Inst>,
-    _marker: InvariantLifetime<'func>,
+    _lifetime_func: InvariantOn<'func>,
+    // lifetime_module: InvariantOn<'module>,
 }
 
 impl<'func> InstRef<'func> {
-    unsafe fn from_inner(inner: *mut ffi::Inst) -> Self {
+    unsafe fn from_inner(inner: *mut ffi::Inst, lifetime_func: InvariantOn<'func>) -> Self {
         unsafe {
             Self {
                 inner: nonnull(inner),
-                _marker: PhantomData,
+                _lifetime_func: lifetime_func,
             }
         }
     }
