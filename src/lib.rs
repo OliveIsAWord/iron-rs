@@ -144,6 +144,13 @@ impl<'module> Module<'module> {
     where
         F: for<'func_brand> FnOnce(Func<'module, 'func_brand>) -> R,
     {
+        let symbol_binding = unsafe { (*symbol.inner.as_ptr()).bind };
+        match symbol_binding {
+            SymbolBinding::Local | SymbolBinding::Global | SymbolBinding::SharedExport => {}
+            SymbolBinding::SharedImport => {
+                panic!("function symbol cannot have binding {symbol_binding:?}");
+            }
+        }
         let inner = unsafe {
             nonnull(ffi::func_new(
                 self.inner.as_ptr(),

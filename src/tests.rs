@@ -26,10 +26,17 @@ fn its_alive() {
 #[should_panic(expected = "symbol length (65536) was greater than u16::MAX")]
 fn symbol_too_long() {
     Module::new(Arch::Xr17032, System::Freestanding, |module| {
-        _ = module.create_symbol(
-            "a".repeat(0x1_0000),
-            SymbolBinding::Global,
-        );
+        _ = module.create_symbol("a".repeat(0x1_0000), SymbolBinding::Global);
+    });
+}
+
+#[test]
+#[should_panic(expected = "function symbol cannot have binding SharedImport")]
+fn shared_import_function() {
+    Module::new(Arch::Xr17032, System::Freestanding, |module| {
+        let func_symbol = module.create_symbol("oopsie", SymbolBinding::SharedImport);
+        let func_sig = FuncSig::new(CallConv::Jackal, [], []);
+        module.create_func(func_symbol, func_sig, |func| println!("{func}"));
     });
 }
 
