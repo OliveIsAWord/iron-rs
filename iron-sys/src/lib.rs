@@ -1,4 +1,5 @@
-#![allow(clippy::pedantic, clippy::nursery)]
+#[allow(clippy::pedantic, clippy::nursery)]
+#[allow(unsafe_op_in_unsafe_fn, unnecessary_transmutes)]
 mod ffi {
     include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 }
@@ -46,10 +47,13 @@ mod tests {
             db_init(db.as_mut_ptr(), 2048);
             let mut db = db.assume_init();
             //emit_ir_func(&raw mut db, f, false);
-            emit_asm(&raw mut db, f);
+            emit_asm(&raw mut db, module);
             let bytes = std::slice::from_raw_parts(db.at, db.len);
             let string = std::str::from_utf8_unchecked(bytes).trim();
-            assert_eq!(string, "id:\n    mov  t0, a0\n    mov  a3, t0\n    ret");
+            assert_eq!(
+                string,
+                ".section text\n\nid:\n.global id\n    mov  t0, a0\n    mov  a3, t0\n    ret"
+            );
         }
     }
 }

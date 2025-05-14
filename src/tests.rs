@@ -19,7 +19,11 @@ fn its_alive() {
         });
         module.codegen()
     });
-    assert_eq!(code, "id:\n    mov  t0, a0\n    mov  a3, t0\n    ret");
+    println!("{code}");
+    assert_eq!(
+        code,
+        ".section text\n\nid:\n.global id\n    mov  t0, a0\n    mov  a3, t0\n    ret"
+    );
 }
 
 #[test]

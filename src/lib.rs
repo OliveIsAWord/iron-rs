@@ -163,7 +163,10 @@ impl<'module> Module<'module> {
     {
         let symbol_binding = unsafe { (*symbol.inner.as_ptr()).bind };
         match symbol_binding {
-            SymbolBinding::Local | SymbolBinding::Global | SymbolBinding::SharedExport => {}
+            SymbolBinding::Local
+            | SymbolBinding::Global
+            | SymbolBinding::SharedExport
+            | SymbolBinding::Extern => {}
             SymbolBinding::SharedImport => {
                 panic!("function symbol cannot have binding {symbol_binding:?}");
             }
@@ -208,9 +211,11 @@ impl<'module> Module<'module> {
         while !func.is_null() {
             unsafe {
                 ffi::codegen(func);
-                ffi::emit_asm(db.inner(), func);
                 func = (*func).list_next;
             }
+        }
+        unsafe {
+            ffi::emit_asm(db.inner(), self.inner.as_ptr());
         }
         let string = unsafe { db.as_str() };
         string.trim().to_owned()
