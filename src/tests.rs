@@ -27,6 +27,22 @@ fn its_alive() {
 }
 
 #[test]
+#[ignore = "a block jumping to itself causes infinite recursion bug in fe_codegen"]
+fn infinite_loop() {
+    let code = Module::new(Arch::Xr17032, System::Freestanding, |module| {
+        let func_symbol = module.create_symbol("infinite_loop", SymbolBinding::Global);
+        let func_sig = FuncSig::new(CallConv::Jackal, [], []);
+        module.create_func(func_symbol, func_sig, |func| {
+            let entry = func.entry_block();
+            entry.push_jump(entry);
+        });
+        module.codegen()
+    });
+    println!("{code}");
+    assert_eq!(code, "");
+}
+
+#[test]
 #[should_panic(expected = "symbol length (65536) was greater than u16::MAX")]
 fn symbol_too_long() {
     Module::new(Arch::Xr17032, System::Freestanding, |module| {

@@ -429,7 +429,7 @@ impl<'module, 'func> Block<'module, 'func> {
     {
         // construct and initialize the return Inst
         let mut returns = returns.into_iter();
-        let func = unsafe { (*self.inner.as_ptr()).func };
+        let func = self.func();
         let fn_return_len = unsafe { (*(*func).sig).return_len };
         assert_eq!(
             usize::from(fn_return_len),
@@ -448,6 +448,28 @@ impl<'module, 'func> Block<'module, 'func> {
             "`returns` violated ExactSizeIterator length"
         );
 
+        unsafe {
+            self.push_inst(inner);
+        }
+    }
+
+    pub fn push_jump(&self, block: Self) {
+        let func = self.func();
+        unsafe {
+            let inst = ffi::inst_jump(func, block.inner.as_ptr());
+            self.push_inst(inst);
+        }
+    }
+
+    pub fn push_direct_call(&self, func: impl Into<FuncRef<'module>>) -> InstRef<'func> {
+        let func = func.into().inner.as_ptr();
+        let _inst = unsafe { ffi::inst_call_direct(self.func(), func) };
+        todo!("direct call arguments")
+    }
+
+    unsafe fn push_inst(self, inner: *mut iron_sys::Inst) -> InstRef<'func> {
+        let func = self.func();
+
         // Assert that all the instruction inputs actually come from this function. Our 'brand lifetimes should make this statically impossible, but it hardly hurts to double check.
         let inst_ref = unsafe { InstRef::from_inner(inner, self.lifetime_func) };
         for &input in inst_ref.inputs() {
@@ -465,11 +487,11 @@ impl<'module, 'func> Block<'module, 'func> {
             let bookend = (*self.inner.as_ptr()).bookend;
             ffi::insert_before(bookend, inner);
         }
+        inst_ref
     }
 
-    pub fn push_direct_call(&self, func: impl Into<FuncRef<'module>>) {
-        _ = func;
-        todo!();
+    fn func(self) -> *mut iron_sys::Func {
+        unsafe { (*self.inner.as_ptr()).func }
     }
 }
 
@@ -500,7 +522,12 @@ impl<'func> InstRef<'func> {
             usize::MAX,
             "uninitialized out parameter `input_len`"
         );
-        unsafe { std::slice::from_raw_parts(input_start, input_len) }
+        if input_start.is_null() {
+            debug_assert_eq!(input_len, 0, "non-zero length slice to null pointer");
+            &[]
+        } else {
+            unsafe { std::slice::from_raw_parts(input_start, input_len) }
+        }
     }
     fn find_block(self) -> *mut ffi::Block {
         let mut inst: *const ffi::Inst = self.inner.as_ptr();
