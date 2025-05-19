@@ -539,23 +539,21 @@ impl<'func> InstRef<'func> {
     }
 }
 
-// // maybe this is a cute abstraction?
-// pub enum Inst<'a> {
-//     Return(Vec<InstRef<'a>>),
-// }
+// An unfortunate function that only exists because of a lack of const traits and not being able to infallibly convert an enum into an integer without wrapping or truncating.
+const fn inst_kind_to_u8(kind: InstKindGeneric) -> u8 {
+    // Use of transmute is simple and assures the same size as u16.
+    let v: u16 = unsafe { std::mem::transmute(kind) };
+    if v > u8::MAX as u16 {
+        panic!("out of range");
+    }
+    v as u8
+}
 
-// impl<'a> Inst<'a> {
-//     unsafe fn into_ref(self, ipool: *mut ffi::InstPool) -> InstRef<'a> {
-//         match self {
-//             Self::Return(returns) => {
-//                 let fn_return_len = unsafe { (*(*(*self.inner.as_ptr()).func).sig).return_len };
-//                 assert_eq!(
-//                     usize::from(fn_return_len),
-//                     returns.len(),
-//                     "incorrect number of return values"
-//                 );
-//             }
-//         }
-//         todo!()
-//     }
-// }
+#[repr(u8)]
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug)]
+pub enum BinOp {
+    Add = inst_kind_to_u8(InstKindGeneric::IAdd),
+    Sub = inst_kind_to_u8(InstKindGeneric::ISub),
+    IMul = inst_kind_to_u8(InstKindGeneric::IMul),
+}
