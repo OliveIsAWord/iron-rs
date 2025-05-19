@@ -422,6 +422,38 @@ pub struct Block<'module, 'func> {
 }
 
 impl<'module, 'func> Block<'module, 'func> {
+    pub fn push_const(self, value: Const) -> InstRef<'func> {
+        let func = self.func();
+        let ty = value.ty();
+        // TODO: make sure this 0 write is dead, e.g. doesn't affect smaller constants like I32
+        let inner = unsafe { ffi::inst_const(func, ty, 0) };
+        let value_ptr = unsafe { &raw mut (*inner).extra as *mut ffi::InstConst };
+        match value {
+            Const::U32(x) => unsafe { *value_ptr.cast() = x },
+            Const::U64(x) => unsafe { *value_ptr.cast() = x },
+        }
+        unsafe { self.push_inst(inner) }
+    }
+
+    pub fn push_binop(
+        self,
+        kind: BinOp,
+        lhs: InstRef<'func>,
+        rhs: InstRef<'func>,
+    ) -> InstRef<'func> {
+        let raw_kind = InstKind(kind as u16);
+        debug_assert!(
+            unsafe { ffi::inst_has_trait(raw_kind, Trait::SAME_IN_OUT_TY) },
+            "FeInstKind corresponding to {kind:?} needs a different type",
+        );
+        let ty = lhs.ty();
+        let func = self.func();
+        unsafe {
+            let inner = ffi::inst_binop(func, ty, raw_kind, lhs.inner.as_ptr(), rhs.inner.as_ptr());
+            self.push_inst(inner)
+        }
+    }
+
     pub fn push_return<IterReturns>(self, returns: IterReturns)
     where
         IterReturns: IntoIterator<Item = InstRef<'func>>,
@@ -529,6 +561,9 @@ impl<'func> InstRef<'func> {
             unsafe { std::slice::from_raw_parts(input_start, input_len) }
         }
     }
+    pub fn ty(self) -> Ty {
+        unsafe { (*self.inner.as_ptr()).ty }
+    }
     fn find_block(self) -> *mut ffi::Block {
         let mut inst: *const ffi::Inst = self.inner.as_ptr();
         while unsafe { (*inst).kind } != ffi::InstKind::from(ffi::InstKindGeneric::Bookend) {
@@ -549,11 +584,27 @@ const fn inst_kind_to_u8(kind: InstKindGeneric) -> u8 {
     v as u8
 }
 
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug)]
+pub enum Const {
+    U32(u32),
+    U64(u64),
+}
+impl Const {
+    fn ty(self) -> Ty {
+        match self {
+            Self::U32(_) => Ty::I32,
+            Self::U64(_) => Ty::I64,
+        }
+    }
+}
+
 #[repr(u8)]
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug)]
 pub enum BinOp {
     Add = inst_kind_to_u8(InstKindGeneric::IAdd),
     Sub = inst_kind_to_u8(InstKindGeneric::ISub),
-    IMul = inst_kind_to_u8(InstKindGeneric::IMul),
+    // i'm panicking, does wrapping multiplication actually have a signedness??
+    // IMul = inst_kind_to_u8(InstKindGeneric::IMul),
 }
