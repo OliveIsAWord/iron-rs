@@ -371,6 +371,15 @@ impl<'module, 'func> Func<'module, 'func> {
         }
     }
 
+    pub fn create_block(&self) -> Block<'module, 'func> {
+        let inner = unsafe { nonnull(ffi::block_new(self.inner.as_ptr())) };
+        Block {
+            inner,
+            lifetime_func: self.lifetime_func,
+            _lifetime_module: self.lifetime_module,
+        }
+    }
+
     pub fn get_param(self, index: u16) -> InstRef<'func> {
         let param_len = unsafe { (*(*self.inner.as_ptr()).sig).param_len };
         assert!(

@@ -68,6 +68,25 @@ fn infinite_loop() {
 }
 
 #[test]
+#[ignore = "an unconditional jump loop causes infinite recursion bug in fe_codegen"]
+fn infinite_loop2() {
+    let code = Module::new(Arch::Xr17032, System::Freestanding, |module| {
+        let func_symbol = module.create_symbol("infinite_loop2", SymbolBinding::Global);
+        let func_sig = FuncSig::new(CallConv::Jackal, [], []);
+        module.create_func(func_symbol, func_sig, |func| {
+            let b1 = func.entry_block();
+            let b2 = func.create_block();
+            b1.push_jump(b2);
+            b2.push_jump(b1);
+            //panic!("{func}");
+        });
+        module.codegen()
+    });
+    println!("{code}");
+    assert_eq!(code, "");
+}
+
+#[test]
 #[should_panic(expected = "symbol length (65536) was greater than u16::MAX")]
 fn symbol_too_long() {
     Module::new(Arch::Xr17032, System::Freestanding, |module| {
