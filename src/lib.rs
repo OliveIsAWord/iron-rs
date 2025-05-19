@@ -461,11 +461,11 @@ impl<'module, 'func> Block<'module, 'func> {
         }
     }
 
-    pub fn push_direct_call(&self, func: impl Into<FuncRef<'module>>) -> InstRef<'func> {
-        let func = func.into().inner.as_ptr();
-        let _inst = unsafe { ffi::inst_call_direct(self.func(), func) };
-        todo!("direct call arguments")
-    }
+    // pub fn push_direct_call(&self, func: impl Into<FuncRef<'module>>) -> InstRef<'func> {
+    //     let func = func.into().inner.as_ptr();
+    //     let _inst = unsafe { ffi::inst_call_direct(self.func(), func) };
+    //     todo!("direct call arguments")
+    // }
 
     unsafe fn push_inst(self, inner: *mut iron_sys::Inst) -> InstRef<'func> {
         let func = self.func();

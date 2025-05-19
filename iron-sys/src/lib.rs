@@ -1,5 +1,5 @@
 #[allow(clippy::pedantic, clippy::nursery)]
-#[allow(unsafe_op_in_unsafe_fn, unnecessary_transmutes)]
+#[allow(unsafe_op_in_unsafe_fn, unnecessary_transmutes, non_camel_case_types, non_upper_case_globals)]
 mod ffi {
     include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 }

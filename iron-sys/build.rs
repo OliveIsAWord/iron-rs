@@ -61,8 +61,6 @@ fn main() {
             "-Di64=int64_t",
             "-Disize=intptr_t",
         ])
-        // stop `f32` from being escaped as `f32_`, etc.
-        .blocklist_item("f[0-9]+_?")
         // `fe__` (double underscore) prefix is for internal items
         .blocklist_item("FE__.*|fe__.*")
         .opaque_type("Fe_.*")
