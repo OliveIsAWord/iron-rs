@@ -22,7 +22,7 @@ fn its_alive() {
     println!("{code}");
     assert_eq!(
         code,
-        ".section text\n\nid:\n.global id\n    mov  t0, a0\n    mov  a3, t0\n    ret"
+        ".section text\n\nid:\n.global id\n.b0:\n    mov  t0, a0\n    mov  a3, t0\n    ret"
     );
 }
 
@@ -47,12 +47,11 @@ fn binop_const_test() {
     println!("{code}");
     assert_eq!(
         code,
-        ".section text\n\nbinop_const_test:\n.global binop_const_test\n    addi t0, zero, 1337\n    lui  t1, zero, 15\n    addi t2, t1, 16960\n    subi t1, zero, 1\n    addi t0, t0, 42\n    add  t1, t1, t2\n    sub  t0, t0, t1\n    mov  a3, t0\n    ret"
+        ".section text\n\nbinop_const_test:\n.global binop_const_test\n.b0:\n    addi t0, zero, 1337\n    lui  t1, zero, 15\n    addi t2, t1, 16960\n    subi t1, zero, 1\n    addi t0, t0, 42\n    add  t1, t1, t2\n    sub  t0, t0, t1\n    mov  a3, t0\n    ret"
     );
 }
 
 #[test]
-#[ignore = "a block jumping to itself causes infinite recursion bug in fe_codegen"]
 fn infinite_loop() {
     let code = Module::new(Arch::Xr17032, System::Freestanding, |module| {
         let func_symbol = module.create_symbol("infinite_loop", SymbolBinding::Global);
@@ -63,12 +62,10 @@ fn infinite_loop() {
         });
         module.codegen()
     });
-    println!("{code}");
-    assert_eq!(code, "");
+    assert_eq!(code, ".section text\n\ninfinite_loop:\n.global infinite_loop\n.b0:\n    j    .b0");
 }
 
 #[test]
-#[ignore = "an unconditional jump loop causes infinite recursion bug in fe_codegen"]
 fn infinite_loop2() {
     let code = Module::new(Arch::Xr17032, System::Freestanding, |module| {
         let func_symbol = module.create_symbol("infinite_loop2", SymbolBinding::Global);
@@ -82,8 +79,7 @@ fn infinite_loop2() {
         });
         module.codegen()
     });
-    println!("{code}");
-    assert_eq!(code, "");
+    assert_eq!(code, ".section text\n\ninfinite_loop2:\n.global infinite_loop2\n.b0:\n.b1:\n    j    .b0");
 }
 
 #[test]

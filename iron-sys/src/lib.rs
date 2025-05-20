@@ -52,7 +52,7 @@ mod tests {
             let string = std::str::from_utf8_unchecked(bytes).trim();
             assert_eq!(
                 string,
-                ".section text\n\nid:\n.global id\n    mov  t0, a0\n    mov  a3, t0\n    ret"
+                ".section text\n\nid:\n.global id\n.b0:\n    mov  t0, a0\n    mov  a3, t0\n    ret"
             );
         }
     }
