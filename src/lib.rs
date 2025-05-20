@@ -451,11 +451,16 @@ impl<'module, 'func> Block<'module, 'func> {
         rhs: InstRef<'func>,
     ) -> InstRef<'func> {
         let raw_kind = InstKind(kind as u16);
-        debug_assert!(
-            unsafe { ffi::inst_has_trait(raw_kind, Trait::SAME_IN_OUT_TY) },
-            "FeInstKind corresponding to {kind:?} needs a different type",
-        );
-        let ty = lhs.ty();
+        let ty = match kind {
+            BinOp::IAdd | BinOp::ISub | BinOp::IMul => {
+                debug_assert!(raw_kind.has_trait(Trait::SAME_IN_OUT_TY));
+                lhs.ty()
+            }
+            BinOp::IEq => {
+                debug_assert!(raw_kind.has_trait(Trait::BOOL_OUT_TY));
+                Ty::Bool
+            }
+        };
         let func = self.func();
         unsafe {
             let inner = ffi::inst_binop(func, ty, raw_kind, lhs.inner.as_ptr(), rhs.inner.as_ptr());
@@ -612,8 +617,8 @@ impl Const {
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug)]
 pub enum BinOp {
-    Add = inst_kind_to_u8(InstKindGeneric::IAdd),
-    Sub = inst_kind_to_u8(InstKindGeneric::ISub),
-    // i'm panicking, does wrapping multiplication actually have a signedness??
-    // IMul = inst_kind_to_u8(InstKindGeneric::IMul),
+    IAdd = inst_kind_to_u8(InstKindGeneric::IAdd),
+    ISub = inst_kind_to_u8(InstKindGeneric::ISub),
+    IMul = inst_kind_to_u8(InstKindGeneric::IMul),
+    IEq = inst_kind_to_u8(InstKindGeneric::IEq),
 }

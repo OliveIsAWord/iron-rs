@@ -5,6 +5,12 @@ mod ffi {
 }
 pub use ffi::*;
 
+impl InstKind {
+    pub fn has_trait(self, t: Trait) -> bool {
+        unsafe { ffi::inst_has_trait(self, t) }
+    }
+}
+
 impl PartialEq for InstKind {
     fn eq(&self, other: &Self) -> bool {
         self.0 == other.0

@@ -27,6 +27,10 @@ fn its_alive() {
 }
 
 #[test]
+fn aaa() {
+}
+
+#[test]
 fn binop_const_test() {
     let code = Module::new(Arch::Xr17032, System::Freestanding, |module| {
         let func_symbol = module.create_symbol("binop_const_test", SymbolBinding::Global);
@@ -37,9 +41,9 @@ fn binop_const_test() {
             let const1337 = entry.push_const(Const::U32(1337));
             let const1_000_000 = entry.push_const(Const::U32(1_000_000));
             let const_neg_1 = entry.push_const(Const::U32(-1 as _));
-            let add1 = entry.push_binop(BinOp::Add, const42, const1337);
-            let add2 = entry.push_binop(BinOp::Add, const1_000_000, const_neg_1);
-            let sub = entry.push_binop(BinOp::Sub, add1, add2);
+            let add1 = entry.push_binop(BinOp::IAdd, const42, const1337);
+            let add2 = entry.push_binop(BinOp::IAdd, const1_000_000, const_neg_1);
+            let sub = entry.push_binop(BinOp::ISub, add1, add2);
             entry.push_return([sub]);
         });
         module.codegen()
@@ -48,6 +52,28 @@ fn binop_const_test() {
     assert_eq!(
         code,
         ".section text\n\nbinop_const_test:\n.global binop_const_test\n.b0:\n    addi t0, zero, 1337\n    lui  t1, zero, 15\n    addi t2, t1, 16960\n    subi t1, zero, 1\n    addi t0, t0, 42\n    add  t1, t1, t2\n    sub  t0, t0, t1\n    mov  a3, t0\n    ret"
+    );
+}
+
+#[test]
+fn cmp_branch_test() {
+    let code = Module::new(Arch::Xr17032, System::Freestanding, |module| {
+        let func_symbol = module.create_symbol("cmp_branch_test", SymbolBinding::Global);
+        let func_sig = FuncSig::new(CallConv::Jackal, [], [FuncParam { ty: Ty::I32 }]);
+        module.create_func(func_symbol, func_sig, |func| {
+            let entry = func.entry_block();
+            let const2 = entry.push_const(Const::U32(2));
+            let const5 = entry.push_const(Const::U32(5));
+            let add = entry.push_binop(BinOp::IAdd, const2, const2);
+            let cmp = entry.push_binop(BinOp::IEq, add, const5);
+            entry.push_return([cmp]);
+        });
+        module.codegen()
+    });
+    println!("{code}");
+    assert_eq!(
+        code,
+        ".section text\n\ncmp_branch_test:\n.global cmp_branch_test\n.b0:\n    addi t0, zero, 2\n    addi t1, zero, 5\n    addi t0, t0, 2\n    sub  t0, t0, t1\n    slti t0, t0, 1\n    mov  a3, t0\n    ret"
     );
 }
 
@@ -62,7 +88,10 @@ fn infinite_loop() {
         });
         module.codegen()
     });
-    assert_eq!(code, ".section text\n\ninfinite_loop:\n.global infinite_loop\n.b0:\n    j    .b0");
+    assert_eq!(
+        code,
+        ".section text\n\ninfinite_loop:\n.global infinite_loop\n.b0:\n    j    .b0"
+    );
 }
 
 #[test]
@@ -79,7 +108,10 @@ fn infinite_loop2() {
         });
         module.codegen()
     });
-    assert_eq!(code, ".section text\n\ninfinite_loop2:\n.global infinite_loop2\n.b0:\n.b1:\n    j    .b0");
+    assert_eq!(
+        code,
+        ".section text\n\ninfinite_loop2:\n.global infinite_loop2\n.b0:\n.b1:\n    j    .b0"
+    );
 }
 
 #[test]
