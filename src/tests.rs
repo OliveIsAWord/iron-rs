@@ -22,12 +22,8 @@ fn its_alive() {
     println!("{code}");
     assert_eq!(
         code,
-        ".section text\n\nid:\n.global id\n.b0:\n    mov  t0, a0\n    mov  a3, t0\n    ret"
+        ".section text\n\nid:\n.global id\n.b1:\n    mov  t0, a0\n    mov  a3, t0\n    ret"
     );
-}
-
-#[test]
-fn aaa() {
 }
 
 #[test]
@@ -51,7 +47,7 @@ fn binop_const_test() {
     println!("{code}");
     assert_eq!(
         code,
-        ".section text\n\nbinop_const_test:\n.global binop_const_test\n.b0:\n    addi t0, zero, 1337\n    lui  t1, zero, 15\n    addi t2, t1, 16960\n    subi t1, zero, 1\n    addi t0, t0, 42\n    add  t1, t1, t2\n    sub  t0, t0, t1\n    mov  a3, t0\n    ret"
+        ".section text\n\nbinop_const_test:\n.global binop_const_test\n.b1:\n    addi t0, zero, 1337\n    lui  t1, zero, 15\n    addi t2, t1, 16960\n    subi t1, zero, 1\n    addi t0, t0, 42\n    add  t1, t1, t2\n    sub  t0, t0, t1\n    mov  a3, t0\n    ret"
     );
 }
 
@@ -73,7 +69,7 @@ fn cmp_branch_test() {
     println!("{code}");
     assert_eq!(
         code,
-        ".section text\n\ncmp_branch_test:\n.global cmp_branch_test\n.b0:\n    addi t0, zero, 2\n    addi t1, zero, 5\n    addi t0, t0, 2\n    sub  t0, t0, t1\n    slti t0, t0, 1\n    mov  a3, t0\n    ret"
+        ".section text\n\ncmp_branch_test:\n.global cmp_branch_test\n.b1:\n    addi t0, zero, 2\n    addi t1, zero, 5\n    addi t0, t0, 2\n    sub  t0, t0, t1\n    slti t0, t0, 1\n    mov  a3, t0\n    ret"
     );
 }
 
@@ -90,7 +86,7 @@ fn infinite_loop() {
     });
     assert_eq!(
         code,
-        ".section text\n\ninfinite_loop:\n.global infinite_loop\n.b0:\n    j    .b0"
+        ".section text\n\ninfinite_loop:\n.global infinite_loop\n.b1:\n    j    .b1"
     );
 }
 
@@ -110,7 +106,7 @@ fn infinite_loop2() {
     });
     assert_eq!(
         code,
-        ".section text\n\ninfinite_loop2:\n.global infinite_loop2\n.b0:\n.b1:\n    j    .b0"
+        ".section text\n\ninfinite_loop2:\n.global infinite_loop2\n.b1:\n.b2:\n    j    .b1"
     );
 }
 
